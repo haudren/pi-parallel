@@ -10,6 +10,7 @@ int main(int argc, char* argv[])
 	int masterPID = 0;
 	int tag = 314;
 	int myid, nrprocess;
+	int steps = 100;
 	MPI_Status status;
 
 	MPI_Init(&argc, &argv);
@@ -22,30 +23,65 @@ int main(int argc, char* argv[])
 	done.resize(nrprocess);
 	std::fill(done.begin(), done.end(), false);
 	done[0] = true;
+	//Which terms have been computed
+	std::vector<bool> computed;
+	computed.resize(steps);
+	std::fill(computed.begin(), computed.end(), false);
+	//Which terms are now being computed
+	int computing[nrprocess];
 
-	if(myid == 0)
+	int curindex = 0;
+
+	if(myid == masterPID)
 	{
 		double partial, result;
 		result = 0;
-		while(!all(done))
+		for(int pid = 1; pid < nrprocess; pid++)
+		{
+			MPI_Send(&curindex, 1, MPI_INT, pid, tag,
+					MPI_COMM_WORLD);
+			computing[pid] = curindex;
+			curindex++;
+		}
+
+		while(!all(computed))
 		{
 			MPI_Recv(&partial, 1, MPI_DOUBLE, MPI_ANY_SOURCE, tag,
 					MPI_COMM_WORLD, &status);
 			result = result + partial;
-			done[status.MPI_SOURCE] = true;
+			computed[computing[status.MPI_SOURCE]] = true;
+			if(curindex < steps)
+			{
+				MPI_Send(&curindex, 1, MPI_INT, status.MPI_SOURCE, tag,
+					MPI_COMM_WORLD);
+				computing[status.MPI_SOURCE] = curindex;
+				curindex++;
+			}
 		}
+
+		for(int pid = 1; pid < nrprocess; pid++)
+		{
+			curindex = -1;
+			MPI_Send(&curindex, 1, MPI_INT, pid, tag,
+					MPI_COMM_WORLD);
+		}
+
 		std::cout << "End result : " << result << std::fixed << std::endl;
 	}
 	else
 	{
-		int steps = 50;
-		double sum = 0;
-		for(int i = 0; i < steps; i++)
+		while(1)
 		{
-			sum = sum + term(i);
+			MPI_Recv(&curindex, 1, MPI_INT, masterPID, tag,
+					MPI_COMM_WORLD, &status);
+			if(curindex == -1)
+			{
+				break;
+			}
+			double t = term(curindex);
+			std::cout << "Term: "<< curindex << " is " << std::scientific << t << " by pid "<< myid << std::endl;
+			MPI_Send(&t, 1, MPI_DOUBLE, masterPID, tag, MPI_COMM_WORLD);
 		}
-		std::cout << "Pi: " << std::fixed << sum << std::endl;
-		MPI_Send(&sum, 1, MPI_DOUBLE, masterPID, tag, MPI_COMM_WORLD);
 	}
 	MPI_Finalize();
 }
