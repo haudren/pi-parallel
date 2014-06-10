@@ -1,6 +1,8 @@
 #include <mpi.h>
 #include <stdio.h>
 #include <iostream>
+#include <algorithm>
+#include <vector>
 #include "pi.hxx"
 
 int main(int argc, char* argv[])
@@ -15,15 +17,22 @@ int main(int argc, char* argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &nrprocess);
 	std::cout.precision(15);
 
+	//Is process pid done ?
+	std::vector<bool> done;
+	done.resize(nrprocess);
+	std::fill(done.begin(), done.end(), false);
+	done[0] = true;
+
 	if(myid == 0)
 	{
 		double partial, result;
 		result = 0;
-		for(int pid = 1; pid < nrprocess; pid++)
+		while(!all(done))
 		{
-			MPI_Recv(&partial, 1, MPI_DOUBLE, pid, tag,
+			MPI_Recv(&partial, 1, MPI_DOUBLE, MPI_ANY_SOURCE, tag,
 					MPI_COMM_WORLD, &status);
 			result = result + partial;
+			done[status.MPI_SOURCE] = true;
 		}
 		std::cout << "End result : " << result << std::fixed << std::endl;
 	}
@@ -66,4 +75,16 @@ double oddfactorial(int index)
 		result = (2*k+1)*result;
 	}
 	return(result);
+}
+
+bool all(std::vector<bool>& v)
+{
+	for(std::vector<bool>::iterator it=v.begin(); it!=v.end(); ++it)
+	{
+		if(!*it)
+		{
+			return(false);
+		}
+	}
+	return(true);
 }
